@@ -11,7 +11,10 @@ function Get-CsvHeaders {
         [string]$CsvPath
     )
 
-    $parser = [Microsoft.VisualBasic.FileIO.TextFieldParser]::new($CsvPath)
+    # Windows PowerShell 5.1 no carga este ensamblado por defecto.
+    Add-Type -AssemblyName Microsoft.VisualBasic
+
+    $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($CsvPath)
     try {
         $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
         $parser.SetDelimiters(',')
