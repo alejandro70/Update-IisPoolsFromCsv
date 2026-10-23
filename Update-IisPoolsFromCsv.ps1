@@ -1,6 +1,6 @@
-$s = "LAUSD-WWEBCHB01"
-$ip = "172.25.109.151"
-$csvMigrateFile = "migracion_LAUSD-WWEBCHB01.csv"
+$s = "ServerName"
+$ip = "127.0.0.1"
+$csvMigrateFile = "migracion_ServerName.csv"
 
 Import-Module WebAdministration -ErrorAction Stop
 
