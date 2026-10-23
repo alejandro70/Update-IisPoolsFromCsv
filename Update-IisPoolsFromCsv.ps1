@@ -4,6 +4,7 @@ $csvMigrateFile = "migracion_LAUSD-WWEBCHB01.csv"
 
 Import-Module WebAdministration -ErrorAction Stop
 
+# Lee el encabezado respetando campos CSV entrecomillados.
 function Get-CsvHeaders {
     param(
         [Parameter(Mandatory)]
@@ -27,6 +28,7 @@ function Get-CsvHeaders {
     }
 }
 
+# Actualiza la identidad de uno o más pools y devuelve el resultado por pool.
 function Set-IisAppPoolGmsa {
     param(
         [Parameter(Mandatory)]
@@ -91,6 +93,7 @@ function Set-IisAppPoolGmsa {
     }
 }
 
+# Valida el CSV, filtra las filas del servidor actual y resume los resultados.
 function Update-IisPoolsFromCsv {
     param(
         [Parameter(Mandatory)]

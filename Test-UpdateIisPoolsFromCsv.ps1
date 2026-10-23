@@ -12,6 +12,7 @@ if ($parseErrors.Count -gt 0) {
     throw "Could not parse production script: $($parseErrors[0].Message)"
 }
 
+# Restablece los datos simulados para aislar cada prueba.
 function Reset-TestState {
     $script:testState = @{
         IisAvailable = $true
@@ -27,6 +28,7 @@ function Reset-TestState {
     }
 }
 
+# Estos dobles sustituyen las dependencias de IIS y del sistema de archivos.
 function Get-PSDrive {
     param([string]$Name)
 
@@ -84,6 +86,7 @@ function Import-Csv {
     return $script:testState.CsvRows
 }
 
+# Carga las funciones reales sin ejecutar el bloque principal del script.
 foreach ($functionAst in $scriptAst.FindAll(
     { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] },
     $false
@@ -92,12 +95,14 @@ foreach ($functionAst in $scriptAst.FindAll(
 }
 
 $script:getCsvHeadersFunction = (Get-Command Get-CsvHeaders).ScriptBlock
+# Simula el encabezado para probar la validación sin depender de archivos CSV.
 function Get-CsvHeaders {
     param([string]$CsvPath)
 
     return $script:testState.CsvHeaders
 }
 
+# Lanza un error si el valor obtenido no coincide con el esperado.
 function Assert-Equal {
     param(
         [object]$Actual,
@@ -110,6 +115,7 @@ function Assert-Equal {
     }
 }
 
+# Confirma que la acción proporcionada produzca una excepción.
 function Assert-Throws {
     param(
         [scriptblock]$Action,
@@ -131,6 +137,7 @@ function Assert-Throws {
 
 $testsPassed = 0
 
+# Get-CsvHeaders_QuotedHeaders_ParsesFieldsCorrectly
 Reset-TestState
 $tempCsvPath = [System.IO.Path]::GetTempFileName()
 try {
@@ -149,6 +156,7 @@ finally {
 }
 $testsPassed++
 
+# Set-IisAppPoolGmsa_StartedPoolWithRestart_UpdatesIdentityAndRestartsPool
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
     processModel = [pscustomobject]@{
@@ -167,6 +175,7 @@ Assert-Equal $script:testState.SetItemCalls.Count 1 'Pool settings were not save
 Assert-Equal $script:testState.RestartedPools.Count 1 'Started pool was not restarted exactly once.'
 $testsPassed++
 
+# Set-IisAppPoolGmsa_StoppedPoolWithRestart_UpdatesIdentityWithoutRestarting
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
     processModel = [pscustomobject]@{
@@ -181,12 +190,14 @@ $null = Set-IisAppPoolGmsa -PoolNames 'StoppedPool' -GmsaUser 'DOMAIN\svc-exampl
 Assert-Equal $script:testState.RestartedPools.Count 0 'Stopped pool should not be restarted.'
 $testsPassed++
 
+# Set-IisAppPoolGmsa_MissingPool_SkipsPoolWithoutSaving
 Reset-TestState
 $script:testState.PoolExists = $false
 $null = Set-IisAppPoolGmsa -PoolNames 'MissingPool' -GmsaUser 'DOMAIN\svc-example$'
 Assert-Equal $script:testState.SetItemCalls.Count 0 'A missing pool should not be changed.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_RowsFailingFilters_SkipsRowsWithoutUpdatingPools
 Reset-TestState
 $script:testState.CsvRows = @(
     [pscustomobject]@{
@@ -218,6 +229,7 @@ Assert-Equal $filteredResult.TotalRows 3 'The summary should include every CSV r
 Assert-Equal $filteredResult.Skipped 3 'Rows failing the CSV filters should be counted as skipped.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_MissingRequiredColumns_ThrowsValidationError
 Reset-TestState
 $script:testState.CsvHeaders = @('Servidor', 'IP')
 Assert-Throws {
@@ -225,6 +237,7 @@ Assert-Throws {
 } 'A CSV missing required columns should cause an error.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_DuplicateRequiredColumns_ThrowsValidationError
 Reset-TestState
 $script:testState.CsvHeaders = @('Servidor', 'IP', 'Componente', 'Clasificacion', 'gMSA', 'IP')
 Assert-Throws {
@@ -232,12 +245,14 @@ Assert-Throws {
 } 'A CSV with duplicated required columns should cause an error.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_HeaderOnlyCsv_ReturnsEmptySummary
 Reset-TestState
 $emptyResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
 Assert-Equal $emptyResult.TotalRows 0 'A header-only CSV should report zero rows.'
 Assert-Equal $emptyResult.Updated 0 'A header-only CSV should not update pools.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_MissingComponentOrGmsa_CountsRowsAsSkipped
 Reset-TestState
 $script:testState.CsvRows = @(
     [pscustomobject]@{
@@ -260,6 +275,7 @@ Assert-Equal $incompleteResult.Skipped 2 'Rows with missing component or gMSA sh
 Assert-Equal $incompleteResult.Updated 0 'Incomplete rows should not update pools.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_ServerNameMismatch_SkipsRowWithoutUpdatingPool
 Reset-TestState
 $script:testState.CsvRows = @(
     [pscustomobject]@{
@@ -275,6 +291,7 @@ $null = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109
 Assert-Equal $script:testState.SetItemCalls.Count 0 'A row for another server should not change a pool.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_SaveFailure_CountsFailureAndIncludesErrorDetails
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
     processModel = [pscustomobject]@{
@@ -302,6 +319,7 @@ if ($saveFailureResult.Errors[0] -notlike '*Simulated save failure*') {
 }
 $testsPassed++
 
+# Update-IisPoolsFromCsv_RestartFailure_CountsFailureAndPreservesSavedSettings
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
     processModel = [pscustomobject]@{
@@ -330,6 +348,7 @@ if ($restartFailureResult.Errors[0] -notlike '*falló el reinicio*') {
 }
 $testsPassed++
 
+# Update-IisPoolsFromCsv_MatchingPoolRow_UpdatesPoolAndReportsSuccess
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
     processModel = [pscustomobject]@{
@@ -358,6 +377,7 @@ Assert-Equal $script:testState.RestartedPools.Count 1 'CSV row did not restart t
 Assert-Equal $successResult.Updated 1 'The summary should count a successfully updated pool.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_MissingCsv_ThrowsFileNotFoundError
 Reset-TestState
 $script:testState.CsvExists = $false
 Assert-Throws {
@@ -365,6 +385,7 @@ Assert-Throws {
 } 'Missing CSV should cause an error.'
 $testsPassed++
 
+# Set-IisAppPoolGmsa_IisProviderUnavailable_ThrowsAvailabilityError
 Reset-TestState
 $script:testState.IisAvailable = $false
 Assert-Throws {
