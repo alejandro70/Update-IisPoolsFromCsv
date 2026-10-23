@@ -4,6 +4,29 @@ $csvMigrateFile = "migracion_LAUSD-WWEBCHB01.csv"
 
 Import-Module WebAdministration -ErrorAction Stop
 
+function Get-CsvHeaders {
+    param(
+        [Parameter(Mandatory)]
+        [string]$CsvPath
+    )
+
+    $parser = [Microsoft.VisualBasic.FileIO.TextFieldParser]::new($CsvPath)
+    try {
+        $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
+        $parser.SetDelimiters(',')
+        $parser.HasFieldsEnclosedInQuotes = $true
+
+        if ($parser.EndOfData) {
+            throw "El archivo CSV está vacío: $CsvPath"
+        }
+
+        return @($parser.ReadFields())
+    }
+    finally {
+        $parser.Dispose()
+    }
+}
+
 function Set-IisAppPoolGmsa {
     param(
         [Parameter(Mandatory)]
@@ -24,30 +47,46 @@ function Set-IisAppPoolGmsa {
 
         if (-not (Test-Path $poolPath)) {
             Write-Warning "No se encontró el Application Pool '$poolName'."
+            [pscustomobject]@{
+                PoolName = $poolName
+                Status = 'Skipped'
+                Message = "No se encontró el Application Pool '$poolName'."
+            }
             continue
         }
 
         try {
-            $pool = Get-Item $poolPath
+            $pool = Get-Item $poolPath -ErrorAction Stop
 
             $pool.processModel.identityType = "SpecificUser"
             $pool.processModel.userName = $GmsaUser
             $pool.processModel.password = ""
 
-            $pool | Set-Item
+            $pool | Set-Item -ErrorAction Stop
 
-            Write-Host "Application Pool '$poolName' actualizado con la cuenta
-GmsaUser'."
-
-            if ($RestartPool) {
-                if ($pool.State -eq "Started") {
-                    Restart-WebAppPool -Name $poolName
-                    Write-Host "Application Pool '$poolName' reiniciado."
+            $message = "Application Pool '$poolName' actualizado con la cuenta '$GmsaUser'."
+            if ($RestartPool -and $pool.State -eq "Started") {
+                try {
+                    Restart-WebAppPool -Name $poolName -ErrorAction Stop
                 }
+                catch {
+                    throw "La configuración se guardó, pero falló el reinicio: $($_.Exception.Message)"
+                }
+                $message += " Pool reiniciado."
+            }
+
+            [pscustomobject]@{
+                PoolName = $poolName
+                Status = 'Updated'
+                Message = $message
             }
         }
         catch {
-            Write-Error "Error al actualizar '$poolName': $($_.Exception.Message)"
+            [pscustomobject]@{
+                PoolName = $poolName
+                Status = 'Failed'
+                Message = "Error al procesar el Application Pool '$poolName': $($_.Exception.Message)"
+            }
         }
     }
 }
@@ -70,36 +109,102 @@ function Update-IisPoolsFromCsv {
         throw "No se encontró el archivo CSV: $CsvPath"
     }
 
-    $rows = Import-Csv -Path $CsvPath
+    $requiredColumns = @('Servidor', 'IP', 'Componente', 'Clasificacion', 'gMSA')
+    $headers = Get-CsvHeaders -CsvPath $CsvPath
+    $missingColumns = @(
+        foreach ($column in $requiredColumns) {
+            if ($headers -notcontains $column) {
+                $column
+            }
+        }
+    )
+    $duplicateColumns = @(
+        foreach ($column in $requiredColumns) {
+            if (@($headers | Where-Object { $_ -eq $column }).Count -gt 1) {
+                $column
+            }
+        }
+    )
+
+    if ($missingColumns.Count -gt 0 -or $duplicateColumns.Count -gt 0) {
+        $validationErrors = @()
+        if ($missingColumns.Count -gt 0) {
+            $validationErrors += "faltan: $($missingColumns -join ', ')"
+        }
+        if ($duplicateColumns.Count -gt 0) {
+            $validationErrors += "están duplicadas: $($duplicateColumns -join ', ')"
+        }
+
+        throw "El encabezado del CSV no es válido ($($validationErrors -join '; '))."
+    }
+
+    $rows = @(Import-Csv -Path $CsvPath -ErrorAction Stop)
+    $updated = 0
+    $skipped = 0
+    $failed = 0
+    $errors = @()
 
     foreach ($row in $rows) {
         if ($row.Servidor -ne $CurrentServerName) {
             Write-Warning "Se omite '$($row.Componente)' porque el servidor '$($row.Servidor)' no coincide con el servidor actual '$CurrentServerName'."
+            $skipped++
             continue
         }
 
         if ($row.IP -ne $CurrentServerIp) {
-            Write-Warning "Se omite '$($row.Componente)' porque la IP '$($row.IP)' no
-incide con la IP actual '$CurrentServerIp'."
+            Write-Warning "Se omite '$($row.Componente)' porque la IP '$($row.IP)' no coincide con la IP actual '$CurrentServerIp'."
+            $skipped++
             continue
         }
 
         if ($row.Clasificacion -ne "IIS Pool") {
-            Write-Warning "Se omite '$($row.Componente)' porque la clasificación no es
-IS Pool'."
+            Write-Warning "Se omite '$($row.Componente)' porque la clasificación '$($row.Clasificacion)' no es 'IIS Pool'."
+            $skipped++
+            continue
+        }
+
+        if ([string]::IsNullOrWhiteSpace($row.Componente)) {
+            Write-Warning "Se omite una fila porque la columna Componente está vacía."
+            $skipped++
             continue
         }
 
         if ([string]::IsNullOrWhiteSpace($row.gMSA)) {
-            Write-Warning "Se omite '$($row.Componente)' porque la columna gMSA está
-cía."
+            Write-Warning "Se omite '$($row.Componente)' porque la columna gMSA está vacía."
+            $skipped++
             continue
         }
 
-        Set-IisAppPoolGmsa -PoolNames @($row.Componente) -GmsaUser $row.gMSA -RestartPool
+        foreach ($result in (Set-IisAppPoolGmsa -PoolNames @($row.Componente) -GmsaUser $row.gMSA -RestartPool:$RestartPool)) {
+            if ($result.Status -eq 'Updated') {
+                $updated++
+                Write-Host $result.Message
+            }
+            elseif ($result.Status -eq 'Failed') {
+                $failed++
+                $errors += $result.Message
+                Write-Error $result.Message -ErrorAction Continue
+            }
+            else {
+                $skipped++
+            }
+        }
+    }
+
+    [pscustomobject]@{
+        CsvPath = $CsvPath
+        TotalRows = $rows.Count
+        Updated = $updated
+        Skipped = $skipped
+        Failed = $failed
+        Errors = @($errors)
     }
 }
 
 $csvPath = Join-Path $PSScriptRoot $csvMigrateFile
+$result = Update-IisPoolsFromCsv -CsvPath $csvPath -CurrentServerIp $ip -CurrentServerName $s -RestartPool
+Write-Host "Resumen: $($result.TotalRows) filas; $($result.Updated) actualizadas; $($result.Skipped) omitidas; $($result.Failed) fallidas."
 
-Update-IisPoolsFromCsv -CsvPath $csvPath -CurrentServerIp $ip -CurrentServerName $s -RestartPool
+if ($result.Failed -gt 0) {
+    throw "La ejecución terminó con $($result.Failed) error(es): $($result.Errors -join '; ')"
+}
