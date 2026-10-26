@@ -31,6 +31,7 @@ $result = foreach ($site in (Get-Website -ErrorAction Stop)) {
         [PSCustomObject]@{
             Site = $site.Name
             Application = "/"
+            PhysicalPath = $site.PhysicalPath
             Pool = $site.ApplicationPool
         }
     }
@@ -40,6 +41,7 @@ $result = foreach ($site in (Get-Website -ErrorAction Stop)) {
             [PSCustomObject]@{
                 Site = $site.Name
                 Application = $application.Path
+                PhysicalPath = $application.PhysicalPath
                 Pool = $application.ApplicationPool
             }
         }
@@ -52,7 +54,7 @@ if ($sortedResult.Count -gt 0) {
     $sortedResult | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
 }
 else {
-    '"Site","Application","Pool"' |
+    '"Site","Application","PhysicalPath","Pool"' |
         Set-Content -Path $csvPath -Encoding UTF8 -ErrorAction Stop
 }
 
