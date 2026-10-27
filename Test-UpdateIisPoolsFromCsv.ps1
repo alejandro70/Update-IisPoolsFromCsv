@@ -18,7 +18,7 @@ function Reset-TestState {
         IisAvailable = $true
         PoolExists = $true
         CsvExists = $true
-        CsvHeaders = @('Servidor', 'IP', 'Componente', 'Clasificacion', 'gMSA')
+        CsvHeaders = @('Servidor', 'IP', 'Componente', 'Clasificacion', 'CuentaGMSA')
         Pool = $null
         CsvRows = @()
         FailSetItem = $false
@@ -215,57 +215,26 @@ $null = Set-IisAppPoolGmsa -PoolNames 'MissingPool' -GmsaUser 'DOMAIN\svc-exampl
 Assert-Equal $script:testState.SetItemCalls.Count 0 'A missing pool should not be changed.'
 $testsPassed++
 
-# Update-IisPoolsFromCsv_RowsFailingFilters_SkipsRowsWithoutUpdatingPools
-Reset-TestState
-$script:testState.CsvRows = @(
-    [pscustomobject]@{
-        Servidor = 'SVR01'
-        IP = '192.0.2.2'
-        Clasificacion = 'IIS Pool'
-        Componente = 'WrongIpPool'
-        gMSA = 'DOMAIN\svc-example$'
-    }
-    [pscustomobject]@{
-        Servidor = 'SVR01'
-        IP = '172.25.109.151'
-        Clasificacion = 'Website'
-        Componente = 'WrongTypePool'
-        gMSA = 'DOMAIN\svc-example$'
-    }
-    [pscustomobject]@{
-        Servidor = 'SVR01'
-        IP = '172.25.109.151'
-        Clasificacion = 'IIS Pool'
-        Componente = 'MissingGmsaPool'
-        gMSA = ' '
-    }
-)
-
-$filteredResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
-Assert-Equal $script:testState.SetItemCalls.Count 0 'Rows failing the CSV filters should not change a pool.'
-Assert-Equal $filteredResult.TotalRows 3 'The summary should include every CSV row.'
-Assert-Equal $filteredResult.Skipped 3 'Rows failing the CSV filters should be counted as skipped.'
-$testsPassed++
-
 # Update-IisPoolsFromCsv_MissingRequiredColumns_ThrowsValidationError
 Reset-TestState
-$script:testState.CsvHeaders = @('Servidor', 'IP')
+$script:testState.CsvHeaders = @('Componente')
 Assert-Throws {
-    $null = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
+    $null = Update-IisPoolsFromCsv -CsvPath 'pools.csv'
 } 'A CSV missing required columns should cause an error.'
 $testsPassed++
 
 # Update-IisPoolsFromCsv_DuplicateRequiredColumns_ThrowsValidationError
 Reset-TestState
-$script:testState.CsvHeaders = @('Servidor', 'IP', 'Componente', 'Clasificacion', 'gMSA', 'IP')
+$script:testState.CsvHeaders = @('Componente', 'CuentaGMSA', 'CuentaGMSA')
 Assert-Throws {
-    Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
+    Update-IisPoolsFromCsv -CsvPath 'pools.csv'
 } 'A CSV with duplicated required columns should cause an error.'
 $testsPassed++
 
 # Update-IisPoolsFromCsv_HeaderOnlyCsv_ReturnsEmptySummary
 Reset-TestState
-$emptyResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
+$script:testState.CsvHeaders = @('Componente', 'CuentaGMSA')
+$emptyResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv'
 Assert-Equal $emptyResult.TotalRows 0 'A header-only CSV should report zero rows.'
 Assert-Equal $emptyResult.Updated 0 'A header-only CSV should not update pools.'
 $testsPassed++
@@ -278,35 +247,19 @@ $script:testState.CsvRows = @(
         IP = '172.25.109.151'
         Clasificacion = 'IIS Pool'
         Componente = ''
-        gMSA = 'DOMAIN\svc-example$'
+        CuentaGMSA = 'DOMAIN\svc-example$'
     }
     [pscustomobject]@{
         Servidor = 'SVR01'
         IP = '172.25.109.151'
         Clasificacion = 'IIS Pool'
         Componente = 'MissingGmsaPool'
-        gMSA = ' '
+        CuentaGMSA = ' '
     }
 )
-$incompleteResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
+$incompleteResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv'
 Assert-Equal $incompleteResult.Skipped 2 'Rows with missing component or gMSA should be reported as skipped.'
 Assert-Equal $incompleteResult.Updated 0 'Incomplete rows should not update pools.'
-$testsPassed++
-
-# Update-IisPoolsFromCsv_ServerNameMismatch_SkipsRowWithoutUpdatingPool
-Reset-TestState
-$script:testState.CsvRows = @(
-    [pscustomobject]@{
-        Servidor = 'OTHER-SERVER'
-        IP = '172.25.109.151'
-        Clasificacion = 'IIS Pool'
-        Componente = 'WrongServerPool'
-        gMSA = 'DOMAIN\svc-example$'
-    }
-)
-
-$null = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
-Assert-Equal $script:testState.SetItemCalls.Count 0 'A row for another server should not change a pool.'
 $testsPassed++
 
 # Update-IisPoolsFromCsv_WhatIf_ReportsSimulationWithoutSaving
@@ -325,11 +278,11 @@ $script:testState.CsvRows = @(
         IP = '172.25.109.151'
         Clasificacion = 'IIS Pool'
         Componente = 'ExamplePool'
-        gMSA = 'DOMAIN\svc-example$'
+        CuentaGMSA = 'DOMAIN\svc-example$'
     }
 )
 
-$simulatedUpdate = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01' -RestartPool -WhatIf
+$simulatedUpdate = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -RestartPool -WhatIf
 Assert-Equal $simulatedUpdate.WhatIf 1 'The summary should count the simulated pool change.'
 Assert-Equal $simulatedUpdate.Updated 0 'A simulated change should not count as an update.'
 Assert-Equal $simulatedUpdate.Changes[0].Status 'WhatIf' 'The change details should identify the simulated action.'
@@ -355,10 +308,10 @@ $script:testState.CsvRows = @(
         IP = '172.25.109.151'
         Clasificacion = 'IIS Pool'
         Componente = 'SaveFailurePool'
-        gMSA = 'DOMAIN\svc-example$'
+        CuentaGMSA =  'DOMAIN\svc-example$'
     }
 )
-$saveFailureResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01' 2>$null
+$saveFailureResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' 2>$null
 Assert-Equal $saveFailureResult.Failed 1 'A save failure should be counted.'
 Assert-Equal $saveFailureResult.Errors.Count 1 'A save failure should include error details.'
 if ($saveFailureResult.Errors[0] -notlike '*Simulated save failure*') {
@@ -383,10 +336,10 @@ $script:testState.CsvRows = @(
         IP = '172.25.109.151'
         Clasificacion = 'IIS Pool'
         Componente = 'RestartFailurePool'
-        gMSA = 'DOMAIN\svc-example$'
+        CuentaGMSA =  'DOMAIN\svc-example$'
     }
 )
-$restartFailureResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01' -RestartPool 2>$null
+$restartFailureResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -RestartPool 2>$null
 Assert-Equal $restartFailureResult.Failed 1 'A restart failure should be counted.'
 Assert-Equal $restartFailureResult.Errors.Count 1 'A restart failure should include error details.'
 Assert-Equal $script:testState.SetItemCalls.Count 1 'Pool settings should be saved before reporting a restart failure.'
@@ -411,11 +364,11 @@ $script:testState.CsvRows = @(
         IP = '172.25.109.151'
         Clasificacion = 'IIS Pool'
         Componente = 'ExamplePool'
-        gMSA = 'DOMAIN\svc-example$'
+        CuentaGMSA = 'DOMAIN\svc-example$'
     }
 )
 
-$successResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01' -RestartPool
+$successResult = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -RestartPool
 Assert-Equal $script:testState.Pool.processModel.identityType 'SpecificUser' 'CSV row did not change the pool identity type.'
 Assert-Equal $script:testState.Pool.processModel.userName 'DOMAIN\svc-example$' 'CSV row did not set the pool gMSA.'
 Assert-Equal $script:testState.Pool.processModel.password '' 'CSV row did not clear the pool password.'
@@ -455,7 +408,7 @@ $testsPassed++
 Reset-TestState
 $script:testState.CsvExists = $false
 Assert-Throws {
-    Update-IisPoolsFromCsv -CsvPath 'missing.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01'
+    Update-IisPoolsFromCsv -CsvPath 'missing.csv'
 } 'Missing CSV should cause an error.'
 $testsPassed++
 

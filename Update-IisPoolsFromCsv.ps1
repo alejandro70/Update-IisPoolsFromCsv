@@ -1,11 +1,10 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
+    [Parameter(Mandatory)]
+    [string]$CsvPath,
+
     [string]$LogPath = (Join-Path $PSScriptRoot 'Update-IisPoolsFromCsv.log')
 )
-
-$s = "ServerName"
-$ip = "127.0.0.1"
-$csvMigrateFile = "migracion_ServerName.csv"
 
 Import-Module WebAdministration -ErrorAction Stop
 
@@ -143,12 +142,6 @@ function Update-IisPoolsFromCsv {
         [Parameter(Mandatory)]
         [string]$CsvPath,
 
-        [Parameter(Mandatory)]
-        [string]$CurrentServerIp,
-
-        [Parameter(Mandatory)]
-        [string]$CurrentServerName,
-
         [switch]$RestartPool
     )
 
@@ -156,7 +149,7 @@ function Update-IisPoolsFromCsv {
         throw "No se encontró el archivo CSV: $CsvPath"
     }
 
-    $requiredColumns = @('Servidor', 'IP', 'Componente', 'Clasificacion', 'gMSA')
+    $requiredColumns = @('Componente', 'CuentaGMSA')
     $headers = Get-CsvHeaders -CsvPath $CsvPath
     $missingColumns = @(
         foreach ($column in $requiredColumns) {
@@ -194,40 +187,22 @@ function Update-IisPoolsFromCsv {
     $changes = @()
 
     foreach ($row in $rows) {
-        if ($row.Servidor -ne $CurrentServerName) {
-            Write-Warning "Se omite '$($row.Componente)' porque el servidor '$($row.Servidor)' no coincide con el servidor actual '$CurrentServerName'."
-            $skipped++
-            continue
-        }
-
-        if ($row.IP -ne $CurrentServerIp) {
-            Write-Warning "Se omite '$($row.Componente)' porque la IP '$($row.IP)' no coincide con la IP actual '$CurrentServerIp'."
-            $skipped++
-            continue
-        }
-
-        if ($row.Clasificacion -ne "IIS Pool") {
-            Write-Warning "Se omite '$($row.Componente)' porque la clasificación '$($row.Clasificacion)' no es 'IIS Pool'."
-            $skipped++
-            continue
-        }
-
         if ([string]::IsNullOrWhiteSpace($row.Componente)) {
             Write-Warning "Se omite una fila porque la columna Componente está vacía."
             $skipped++
             continue
         }
 
-        if ([string]::IsNullOrWhiteSpace($row.gMSA)) {
-            Write-Warning "Se omite '$($row.Componente)' porque la columna gMSA está vacía."
+        if ([string]::IsNullOrWhiteSpace($row.CuentaGMSA)) {
+            Write-Warning "Se omite '$($row.Componente)' porque la columna CuentaGMSA está vacía."
             $skipped++
             continue
         }
 
-        foreach ($result in (Set-IisAppPoolGmsa -PoolNames @($row.Componente) -GmsaUser $row.gMSA -RestartPool:$RestartPool -WhatIf:$WhatIfPreference)) {
+        foreach ($result in (Set-IisAppPoolGmsa -PoolNames @($row.Componente) -GmsaUser $row.CuentaGMSA -RestartPool:$RestartPool -WhatIf:$WhatIfPreference)) {
             $changes += [pscustomobject]@{
                 PoolName = $result.PoolName
-                GmsaUser = $row.gMSA
+                GmsaUser = $row.CuentaGMSA
                 Status = $result.Status
                 Message = $result.Message
             }
@@ -263,12 +238,11 @@ function Update-IisPoolsFromCsv {
     }
 }
 
-$csvPath = Join-Path $PSScriptRoot $csvMigrateFile
-$result = Update-IisPoolsFromCsv -CsvPath $csvPath -CurrentServerIp $ip -CurrentServerName $s -RestartPool -WhatIf:$WhatIfPreference
+$result = Update-IisPoolsFromCsv -CsvPath $CsvPath -RestartPool -WhatIf:$WhatIfPreference
 foreach ($change in $result.Changes) {
     Write-IisChangeLog -Path $LogPath -Entry ([pscustomobject]@{
         Timestamp = [DateTimeOffset]::Now.ToString('o')
-        Server = $s
+        Server = $env:COMPUTERNAME
         PoolName = $change.PoolName
         GmsaUser = $change.GmsaUser
         Status = $change.Status
