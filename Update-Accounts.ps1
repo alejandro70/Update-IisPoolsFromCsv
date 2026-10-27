@@ -1,6 +1,7 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$CsvPath = 'accounts_to_update.csv',
+    [Parameter(Mandatory)]
+    [string]$CsvPath,
 
     [string]$LogPath = (Join-Path $PSScriptRoot 'Update-Accounts.log')
 )
