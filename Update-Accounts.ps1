@@ -1,9 +1,8 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [Parameter(Mandatory)]
-    [string]$CsvPath,
+    [string]$CsvPath = 'accounts_to_update.csv',
 
-    [string]$LogPath = (Join-Path $PSScriptRoot 'Update-IisPoolsFromCsv.log')
+    [string]$LogPath = (Join-Path $PSScriptRoot 'Update-Accounts.log')
 )
 
 Import-Module WebAdministration -ErrorAction Stop

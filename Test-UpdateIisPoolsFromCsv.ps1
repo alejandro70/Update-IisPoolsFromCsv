@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$productionScript = Join-Path $PSScriptRoot 'Update-IisPoolsFromCsv.ps1'
+$productionScript = Join-Path $PSScriptRoot 'Update-Accounts.ps1'
 $tokens = $null
 $parseErrors = $null
 $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
