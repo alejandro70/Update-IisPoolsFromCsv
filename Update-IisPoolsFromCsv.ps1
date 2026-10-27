@@ -1,3 +1,8 @@
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [string]$LogPath = (Join-Path $PSScriptRoot 'Update-IisPoolsFromCsv.log')
+)
+
 $s = "ServerName"
 $ip = "127.0.0.1"
 $csvMigrateFile = "migracion_ServerName.csv"
@@ -31,8 +36,28 @@ function Get-CsvHeaders {
     }
 }
 
+# Escribe una entrada CSV en el registro de cambios.
+function Write-IisChangeLog {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [psobject]$Entry
+    )
+
+    $csvLines = @($Entry | ConvertTo-Csv -NoTypeInformation)
+    if ([System.IO.File]::Exists($Path)) {
+        $csvLines = @($csvLines | Select-Object -Skip 1)
+    }
+
+    $content = ($csvLines -join [Environment]::NewLine) + [Environment]::NewLine
+    [System.IO.File]::AppendAllText($Path, $content, [System.Text.UTF8Encoding]::new($true))
+}
+
 # Actualiza la identidad de uno o más pools y devuelve el resultado por pool.
 function Set-IisAppPoolGmsa {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)]
         [string[]]$PoolNames,
@@ -63,27 +88,42 @@ function Set-IisAppPoolGmsa {
         try {
             $pool = Get-Item $poolPath -ErrorAction Stop
 
-            $pool.processModel.identityType = "SpecificUser"
-            $pool.processModel.userName = $GmsaUser
-            $pool.processModel.password = ""
-
-            $pool | Set-Item -ErrorAction Stop
-
-            $message = "Application Pool '$poolName' actualizado con la cuenta '$GmsaUser'."
-            if ($RestartPool -and $pool.State -eq "Started") {
-                try {
-                    Restart-WebAppPool -Name $poolName -ErrorAction Stop
-                }
-                catch {
-                    throw "La configuración se guardó, pero falló el reinicio: $($_.Exception.Message)"
-                }
-                $message += " Pool reiniciado."
+            $willRestart = $RestartPool -and $pool.State -eq "Started"
+            $action = "Actualizar la identidad a '$GmsaUser'"
+            if ($willRestart) {
+                $action += ' y reiniciar el pool'
             }
 
-            [pscustomobject]@{
-                PoolName = $poolName
-                Status = 'Updated'
-                Message = $message
+            if ($PSCmdlet.ShouldProcess($poolName, $action)) {
+                $pool.processModel.identityType = "SpecificUser"
+                $pool.processModel.userName = $GmsaUser
+                $pool.processModel.password = ""
+
+                $pool | Set-Item -ErrorAction Stop
+
+                $message = "Application Pool '$poolName' actualizado con la cuenta '$GmsaUser'."
+                if ($willRestart) {
+                    try {
+                        Restart-WebAppPool -Name $poolName -ErrorAction Stop
+                    }
+                    catch {
+                        throw "La configuración se guardó, pero falló el reinicio: $($_.Exception.Message)"
+                    }
+                    $message += " Pool reiniciado."
+                }
+
+                [pscustomobject]@{
+                    PoolName = $poolName
+                    Status = 'Updated'
+                    Message = $message
+                }
+            }
+            else {
+                [pscustomobject]@{
+                    PoolName = $poolName
+                    Status = 'WhatIf'
+                    Message = "Simulación: se actualizaría el Application Pool '$poolName' con la cuenta '$GmsaUser'$(if ($willRestart) { ' y se reiniciaría' })."
+                }
             }
         }
         catch {
@@ -98,6 +138,7 @@ function Set-IisAppPoolGmsa {
 
 # Valida el CSV, filtra las filas del servidor actual y resume los resultados.
 function Update-IisPoolsFromCsv {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)]
         [string]$CsvPath,
@@ -147,8 +188,10 @@ function Update-IisPoolsFromCsv {
     $rows = @(Import-Csv -Path $CsvPath -ErrorAction Stop)
     $updated = 0
     $skipped = 0
+    $whatIf = 0
     $failed = 0
     $errors = @()
+    $changes = @()
 
     foreach ($row in $rows) {
         if ($row.Servidor -ne $CurrentServerName) {
@@ -181,9 +224,20 @@ function Update-IisPoolsFromCsv {
             continue
         }
 
-        foreach ($result in (Set-IisAppPoolGmsa -PoolNames @($row.Componente) -GmsaUser $row.gMSA -RestartPool:$RestartPool)) {
+        foreach ($result in (Set-IisAppPoolGmsa -PoolNames @($row.Componente) -GmsaUser $row.gMSA -RestartPool:$RestartPool -WhatIf:$WhatIfPreference)) {
+            $changes += [pscustomobject]@{
+                PoolName = $result.PoolName
+                GmsaUser = $row.gMSA
+                Status = $result.Status
+                Message = $result.Message
+            }
+
             if ($result.Status -eq 'Updated') {
                 $updated++
+                Write-Host $result.Message
+            }
+            elseif ($result.Status -eq 'WhatIf') {
+                $whatIf++
                 Write-Host $result.Message
             }
             elseif ($result.Status -eq 'Failed') {
@@ -201,15 +255,29 @@ function Update-IisPoolsFromCsv {
         CsvPath = $CsvPath
         TotalRows = $rows.Count
         Updated = $updated
+        WhatIf = $whatIf
         Skipped = $skipped
         Failed = $failed
         Errors = @($errors)
+        Changes = @($changes)
     }
 }
 
 $csvPath = Join-Path $PSScriptRoot $csvMigrateFile
-$result = Update-IisPoolsFromCsv -CsvPath $csvPath -CurrentServerIp $ip -CurrentServerName $s -RestartPool
-Write-Host "Resumen: $($result.TotalRows) filas; $($result.Updated) actualizadas; $($result.Skipped) omitidas; $($result.Failed) fallidas."
+$result = Update-IisPoolsFromCsv -CsvPath $csvPath -CurrentServerIp $ip -CurrentServerName $s -RestartPool -WhatIf:$WhatIfPreference
+foreach ($change in $result.Changes) {
+    Write-IisChangeLog -Path $LogPath -Entry ([pscustomobject]@{
+        Timestamp = [DateTimeOffset]::Now.ToString('o')
+        Server = $s
+        PoolName = $change.PoolName
+        GmsaUser = $change.GmsaUser
+        Status = $change.Status
+        Message = $change.Message
+    })
+}
+
+Write-Host "Resumen: $($result.TotalRows) filas; $($result.Updated) actualizadas; $($result.WhatIf) simuladas; $($result.Skipped) omitidas; $($result.Failed) fallidas."
+Write-Host "Registro de cambios: $LogPath"
 
 if ($result.Failed -gt 0) {
     throw "La ejecución terminó con $($result.Failed) error(es): $($result.Errors -join '; ')"

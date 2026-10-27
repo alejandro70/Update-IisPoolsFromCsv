@@ -175,6 +175,24 @@ Assert-Equal $script:testState.SetItemCalls.Count 1 'Pool settings were not save
 Assert-Equal $script:testState.RestartedPools.Count 1 'Started pool was not restarted exactly once.'
 $testsPassed++
 
+# Set-IisAppPoolGmsa_WhatIf_DoesNotSaveOrRestartPool
+Reset-TestState
+$script:testState.Pool = [pscustomobject]@{
+    processModel = [pscustomobject]@{
+        identityType = 'ApplicationPoolIdentity'
+        userName = ''
+        password = 'old-password'
+    }
+    State = 'Started'
+}
+
+$whatIfResult = Set-IisAppPoolGmsa -PoolNames 'ExamplePool' -GmsaUser 'DOMAIN\svc-example$' -RestartPool -WhatIf
+Assert-Equal $whatIfResult.Status 'WhatIf' 'WhatIf should report a simulated change.'
+Assert-Equal $script:testState.Pool.processModel.identityType 'ApplicationPoolIdentity' 'WhatIf should not change the pool identity.'
+Assert-Equal $script:testState.SetItemCalls.Count 0 'WhatIf should not save pool settings.'
+Assert-Equal $script:testState.RestartedPools.Count 0 'WhatIf should not restart the pool.'
+$testsPassed++
+
 # Set-IisAppPoolGmsa_StoppedPoolWithRestart_UpdatesIdentityWithoutRestarting
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
@@ -291,6 +309,35 @@ $null = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109
 Assert-Equal $script:testState.SetItemCalls.Count 0 'A row for another server should not change a pool.'
 $testsPassed++
 
+# Update-IisPoolsFromCsv_WhatIf_ReportsSimulationWithoutSaving
+Reset-TestState
+$script:testState.Pool = [pscustomobject]@{
+    processModel = [pscustomobject]@{
+        identityType = 'ApplicationPoolIdentity'
+        userName = ''
+        password = 'old-password'
+    }
+    State = 'Started'
+}
+$script:testState.CsvRows = @(
+    [pscustomobject]@{
+        Servidor = 'SVR01'
+        IP = '172.25.109.151'
+        Clasificacion = 'IIS Pool'
+        Componente = 'ExamplePool'
+        gMSA = 'DOMAIN\svc-example$'
+    }
+)
+
+$simulatedUpdate = Update-IisPoolsFromCsv -CsvPath 'pools.csv' -CurrentServerIp '172.25.109.151' -CurrentServerName 'SVR01' -RestartPool -WhatIf
+Assert-Equal $simulatedUpdate.WhatIf 1 'The summary should count the simulated pool change.'
+Assert-Equal $simulatedUpdate.Updated 0 'A simulated change should not count as an update.'
+Assert-Equal $simulatedUpdate.Changes[0].Status 'WhatIf' 'The change details should identify the simulated action.'
+Assert-Equal $script:testState.Pool.processModel.identityType 'ApplicationPoolIdentity' 'The update command should not change the pool during WhatIf.'
+Assert-Equal $script:testState.SetItemCalls.Count 0 'The update command should not save pool settings during WhatIf.'
+Assert-Equal $script:testState.RestartedPools.Count 0 'The update command should not restart pools during WhatIf.'
+$testsPassed++
+
 # Update-IisPoolsFromCsv_SaveFailure_CountsFailureAndIncludesErrorDetails
 Reset-TestState
 $script:testState.Pool = [pscustomobject]@{
@@ -375,6 +422,33 @@ Assert-Equal $script:testState.Pool.processModel.password '' 'CSV row did not cl
 Assert-Equal $script:testState.SetItemCalls.Count 1 'CSV row did not save the pool changes exactly once.'
 Assert-Equal $script:testState.RestartedPools.Count 1 'CSV row did not restart the started pool exactly once.'
 Assert-Equal $successResult.Updated 1 'The summary should count a successfully updated pool.'
+$testsPassed++
+
+# Write-IisChangeLog_AppendsCsvEntries
+$tempLogPath = Join-Path ([System.IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.csv')
+try {
+    $logEntry = [pscustomobject]@{
+        Timestamp = '2026-01-01T00:00:00.0000000+00:00'
+        Server = 'SVR01'
+        PoolName = 'ExamplePool'
+        GmsaUser = 'DOMAIN\svc-example$'
+        Status = 'WhatIf'
+        Message = 'Simulación de prueba'
+    }
+    Write-IisChangeLog -Path $tempLogPath -Entry $logEntry
+    Write-IisChangeLog -Path $tempLogPath -Entry $logEntry
+
+    $logLines = [System.IO.File]::ReadAllLines($tempLogPath)
+    Assert-Equal $logLines.Count 3 'The change log should contain one header and both entries.'
+    if ($logLines[0] -notlike '*Timestamp*PoolName*Status*') {
+        throw 'The change log should have CSV column headers.'
+    }
+}
+finally {
+    if ([System.IO.File]::Exists($tempLogPath)) {
+        Remove-Item -LiteralPath $tempLogPath -Force
+    }
+}
 $testsPassed++
 
 # Update-IisPoolsFromCsv_MissingCsv_ThrowsFileNotFoundError
