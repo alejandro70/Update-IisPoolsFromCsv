@@ -238,7 +238,8 @@ function Update-IisPoolsFromCsv {
     }
 }
 
-$result = Update-IisPoolsFromCsv -CsvPath $CsvPath -RestartPool -WhatIf:$WhatIfPreference
+$resolvedCsvPath = [System.IO.Path]::Combine($PSScriptRoot, $CsvPath)
+$result = Update-IisPoolsFromCsv -CsvPath $resolvedCsvPath -RestartPool -WhatIf:$WhatIfPreference
 foreach ($change in $result.Changes) {
     Write-IisChangeLog -Path $LogPath -Entry ([pscustomobject]@{
         Timestamp = [DateTimeOffset]::Now.ToString('o')
