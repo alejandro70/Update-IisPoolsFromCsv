@@ -1,3 +1,46 @@
+<#
+.SYNOPSIS
+Restaura las identidades de los Application Pools de IIS desde un archivo CSV.
+
+.DESCRIPTION
+Lee las columnas Componente y CuentaActual para asignar la identidad de cada
+Application Pool. Las cuentas tradicionales requieren ingresar y confirmar
+la contraseña de forma interactiva una vez por cada cuenta distinta. Si las
+contraseñas no coinciden o están vacías, se omiten los pools asociados.
+
+Las cuentas cuyo nombre termina en '$' se tratan como gMSA y se asignan sin
+solicitar contraseña. La opción -WhatIf simula la ejecución sin solicitar
+contraseñas, modificar pools ni reiniciarlos.
+
+Los pools iniciados se reinician después de guardar los cambios. Los
+resultados se muestran en pantalla y se agregan al registro CSV indicado por
+LogPath.
+
+.PARAMETER CsvPath
+Ruta del CSV de entrada. Las rutas relativas se resuelven desde la carpeta
+donde está este script.
+
+.PARAMETER LogPath
+Ruta del registro CSV de cambios. Por defecto, se usa Restore-Accounts.log
+junto a este script.
+
+.EXAMPLE
+.\Restore-Accounts.ps1 -CsvPath 'accounts_to_update.csv'
+
+Restaura las cuentas indicadas en el CSV. Solicita y confirma las contraseñas
+de las cuentas tradicionales antes de aplicar cambios.
+
+.EXAMPLE
+.\Restore-Accounts.ps1 -CsvPath 'accounts_to_update.csv' -WhatIf
+
+Muestra las acciones que se realizarían sin solicitar contraseñas, guardar
+cambios ni reiniciar pools.
+
+.NOTES
+Requiere Windows PowerShell con el módulo WebAdministration y permisos para
+administrar Application Pools de IIS. Una cuenta se identifica como gMSA
+cuando el valor de CuentaActual termina en '$'.
+#>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory)]

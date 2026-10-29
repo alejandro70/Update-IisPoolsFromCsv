@@ -1,3 +1,42 @@
+<#
+.SYNOPSIS
+Actualiza las identidades de los Application Pools de IIS a cuentas gMSA.
+
+.DESCRIPTION
+Lee un archivo CSV y asigna a cada Application Pool la cuenta gMSA indicada
+en la columna CuentaGMSA. El CSV debe incluir las columnas Componente y
+CuentaGMSA. Las filas sin alguno de esos valores se omiten.
+
+El script establece la identidad como SpecificUser y deja la contraseña vacía,
+como corresponde a una cuenta gMSA. Los pools iniciados se reinician después
+de guardar los cambios. La opción -WhatIf permite simular la ejecución sin
+modificar ni reiniciar pools.
+
+Los resultados se muestran en pantalla y se agregan al registro CSV indicado
+por LogPath.
+
+.PARAMETER CsvPath
+Ruta del CSV de entrada. Las rutas relativas se resuelven desde la carpeta
+donde está este script.
+
+.PARAMETER LogPath
+Ruta del registro CSV de cambios. Por defecto, se usa Update-Accounts.log
+junto a este script.
+
+.EXAMPLE
+.\Update-Accounts.ps1 -CsvPath 'accounts_to_update.csv'
+
+Actualiza los pools indicados en el CSV y reinicia los que estaban iniciados.
+
+.EXAMPLE
+.\Update-Accounts.ps1 -CsvPath 'accounts_to_update.csv' -WhatIf
+
+Muestra las acciones que se realizarían sin guardar cambios ni reiniciar pools.
+
+.NOTES
+Requiere Windows PowerShell con el módulo WebAdministration y permisos para
+administrar Application Pools de IIS.
+#>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory)]
