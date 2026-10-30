@@ -1,3 +1,7 @@
+# Autor:   Jairo Espitia
+# Fecha:   2026-10-29
+# Versión: 1.0
+
 $ErrorActionPreference = 'Stop'
 $productionScript = Join-Path $PSScriptRoot 'Restore-Accounts.ps1'
 $tokens = $null
@@ -581,7 +585,8 @@ $emptyPasswordResult = Restore-IisPoolsFromCsv -CsvPath 'pools.csv' -RestartPool
 Assert-Equal $emptyPasswordResult.Skipped 1 'A row without a prompted password should be reported as skipped.'
 Assert-Equal $emptyPasswordResult.Updated 0 'A row without a prompted password should not update pools.'
 Assert-Equal $script:testState.SetItemCalls.Count 0 'A row without a prompted password should not save pool settings.'
-Assert-Equal $script:testState.PromptedAccounts.Count 2 'An empty password should still be confirmed before the row is skipped.'
+Assert-Equal $script:testState.RestartedPools.Count 0 'A row without a prompted password should not restart any pool.'
+Assert-Equal $script:testState.PromptedAccounts.Count 1 'An empty password should not trigger a confirmation prompt.'
 $testsPassed++
 
 # Restore-IisPoolsFromCsv_MismatchedPasswordConfirmation_SkipsRowsWithoutSaving

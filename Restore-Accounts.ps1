@@ -1,3 +1,7 @@
+# Autor:   Jairo Espitia
+# Fecha:   2026-10-29
+# Versión: 1.0
+
 <#
 .SYNOPSIS
 Restaura las identidades de los Application Pools de IIS desde un archivo CSV.
@@ -5,8 +9,10 @@ Restaura las identidades de los Application Pools de IIS desde un archivo CSV.
 .DESCRIPTION
 Lee las columnas Componente y CuentaActual para asignar la identidad de cada
 Application Pool. Las cuentas tradicionales requieren ingresar y confirmar
-la contraseña de forma interactiva una vez por cada cuenta distinta. Si las
-contraseñas no coinciden o están vacías, se omiten los pools asociados.
+la contraseña de forma interactiva una vez por cada cuenta distinta. Si la
+contraseña ingresada está vacía, no se solicita confirmación. Si las
+contraseñas no coinciden o están vacías, se omiten los pools asociados sin
+guardar cambios ni reiniciarlos.
 
 Las cuentas cuyo nombre termina en '$' se tratan como gMSA y se asignan sin
 solicitar contraseña. La opción -WhatIf simula la ejecución sin solicitar
@@ -283,6 +289,11 @@ function Restore-IisPoolsFromCsv {
             $securePassword = Read-Host "Contraseña de la cuenta '$account'" -AsSecureString
             $secureConfirmation = $null
             try {
+                # Una contraseña vacía no requiere confirmación; los pools de la cuenta se omitirán.
+                if ($securePassword.Length -eq 0) {
+                    continue
+                }
+
                 $secureConfirmation = Read-Host "Confirmar contraseña de la cuenta '$account'" -AsSecureString
                 if (-not (Test-SecureStringEqual -First $securePassword -Second $secureConfirmation)) {
                     $passwordFailures[$account] = $true

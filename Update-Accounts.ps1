@@ -1,3 +1,7 @@
+# Autor:   Jairo Espitia
+# Fecha:   2026-10-27
+# Versión: 1.0
+
 <#
 .SYNOPSIS
 Actualiza las identidades de los Application Pools de IIS a cuentas gMSA.

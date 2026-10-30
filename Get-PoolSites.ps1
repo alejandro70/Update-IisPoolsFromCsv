@@ -1,3 +1,7 @@
+# Autor:   Jairo Espitia
+# Fecha:   2026-10-26
+# Versión: 1.0
+
 [CmdletBinding()]
 param(
     [string[]]$TargetPools = @(

@@ -1,3 +1,7 @@
+# Autor:   Jairo Espitia
+# Fecha:   2026-10-27
+# Versión: 1.0
+
 $ErrorActionPreference = 'Stop'
 $productionScript = Join-Path $PSScriptRoot 'Update-Accounts.ps1'
 $tokens = $null
