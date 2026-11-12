@@ -1,0 +1,4 @@
+Servidor,IP,Componente,CuentaGMSA
+SVR01,10.100.102.01,WidgetUI,
+SVR01,10.100.102.01,BusinessCore,UVA\G_COREM_DEV$
+,,Cotizaciones,UVA\G_WIDGETM_DEV$

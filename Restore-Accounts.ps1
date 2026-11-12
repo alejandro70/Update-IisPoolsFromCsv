@@ -31,13 +31,13 @@ Ruta del registro CSV de cambios. Por defecto, se usa Restore-Accounts.log
 junto a este script.
 
 .EXAMPLE
-.\Restore-Accounts.ps1 -CsvPath 'accounts_to_update.csv'
+.\Restore-Accounts.ps1 -CsvPath 'auditoria_servicios.csv'
 
 Restaura las cuentas indicadas en el CSV. Solicita y confirma las contraseñas
 de las cuentas tradicionales antes de aplicar cambios.
 
 .EXAMPLE
-.\Restore-Accounts.ps1 -CsvPath 'accounts_to_update.csv' -WhatIf
+.\Restore-Accounts.ps1 -CsvPath 'auditoria_servicios.csv' -WhatIf
 
 Muestra las acciones que se realizarían sin solicitar contraseñas, guardar
 cambios ni reiniciar pools.
